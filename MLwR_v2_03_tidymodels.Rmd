@@ -1,5 +1,5 @@
 ---
-title: "wisc_bc_data - kNN"
+title: "wisc_bc_data - kNN new"
 author: "Eric A. Suess"
 date: "2/4/2021"
 output: html_document
