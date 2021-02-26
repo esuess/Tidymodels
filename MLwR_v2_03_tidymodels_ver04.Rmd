@@ -1,0 +1,133 @@
+---
+title: "Breast Cancer using Tidymodels - with tuning"
+author: "Eric A. Suess"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+```
+
+```{r}
+wbcd <- read_csv("wisc_bc_data.csv")
+wbcd <- wbcd %>% select(-id) %>% 
+  mutate(diagnosis = as_factor(diagnosis))
+wbcd
+```
+
+```{r}
+wbcd %>% filter(is_na(diagnosis))
+```
+
+```{r}
+wbcd_split <- initial_split(wbcd, prop = 0.8)
+wbcd_split
+
+wbcd_train <- training(wbcd_split)
+head(wbcd_train)
+
+wbcd_test <- testing(wbcd_split)
+head(wbcd_test)
+```
+
+```{r}
+wbcd %>% count(diagnosis) %>% 
+  mutate(prop = n/sum(n))
+
+wbcd_train %>% count(diagnosis) %>% 
+  mutate(prop = n/sum(n))
+
+wbcd_test %>% count(diagnosis) %>% 
+  mutate(prop = n/sum(n))
+```
+
+```{r, message = FALSE}
+wbcd %>% select(diagnosis, ends_with("mean")) %>%   
+  ggpairs(aes(color = diagnosis))
+```Untitled
+
+```{r}
+wbcd_rec <-
+  recipe(diagnosis ~ ., data = wbcd_train) %>%
+  step_normalize(all_predictors()) %>% 
+  prep()
+
+wbcd_rec
+summary(wbcd_rec)
+```
+
+```{r}
+tune_spec <- 
+  nearest_neighbor(neighbors = tune()) %>%
+  set_engine("kknn") %>% 
+  set_mode("classification")
+```
+
+```{r}
+tune_grid <- seq(5, 23, by = 2)
+tune_grid
+```
+
+```{r}
+wbcd_wflow <-
+  workflow() %>%
+  add_recipe(wbcd_rec) %>%
+  add_model(tune_spec)
+
+wbcd_wflow
+```
+
+# Using Cross Validation
+
+```{r}
+folds <- vfold_cv(wbcd_train, v = 10)
+folds
+```
+
+```{r}
+wbcd_fit_rs <- 
+  wbcd_wflow %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tune_grid
+    )
+```
+
+```{r}
+collect_metrics(wbcd_fit_rs)
+```
+
+```{r}
+wbcd_fit_rs %>%
+  show_best("accuracy")
+```
+
+```{r}
+best_knn <- wbcd_fit_rs %>%
+  select_best("accuracy")
+
+best_knn
+```
+
+```{r}
+final_wflow <- 
+  wbcd_wflow %>% 
+  finalize_workflow(best_knn)
+```
+
+```{r}
+final_knn <- 
+  final_wflow %>%
+  last_fit(wbcd_split) 
+
+final_knn %>% 
+    collect_metrics()
+
+```

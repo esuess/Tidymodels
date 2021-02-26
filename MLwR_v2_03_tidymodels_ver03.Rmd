@@ -1,0 +1,169 @@
+---
+title: "Breast Cancer using Tidymodels"
+author: "Eric A. Suess"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+```
+
+```{r}
+wbcd <- read_csv("wisc_bc_data.csv")
+wbcd <- wbcd %>% select(-id) %>% 
+  mutate(diagnosis = as_factor(diagnosis))
+wbcd
+```
+
+```{r}
+wbcd %>% filter(is_na(diagnosis))
+```
+
+
+```{r}
+wbcd_split <- initial_split(wbcd, prop = 0.8)
+wbcd_split
+
+wbcd_train <- training(wbcd_split)
+head(wbcd_train)
+
+wbcd_test <- testing(wbcd_split)
+head(wbcd_test)
+```
+
+```{r}
+wbcd %>% count(diagnosis) %>% 
+  mutate(prop = n/sum(n))
+
+wbcd_train %>% count(diagnosis) %>% 
+  mutate(prop = n/sum(n))
+
+wbcd_test %>% count(diagnosis) %>% 
+  mutate(prop = n/sum(n))
+```
+
+```{r}
+wbcd_rec <-
+  recipe(diagnosis ~ ., data = wbcd_train) %>%
+  step_normalize(all_predictors()) %>% 
+  prep()
+
+wbcd_rec
+summary(wbcd_rec)
+```
+
+```{r}
+knn_model <- 
+  nearest_neighbor(neighbors = 9) %>%
+  set_engine("kknn") %>% 
+  set_mode("classification")
+```
+
+```{r}
+wbcd_train_prep <- bake(wbcd_rec, wbcd_train)
+wbcd_train_prep
+
+wbcd_test_prep <- bake(wbcd_rec, wbcd_test)
+wbcd_test_prep
+```
+
+
+
+```{r}
+knn_fit <- knn_model %>% fit(diagnosis ~., wbcd_train_prep)
+
+knn_fit
+```
+
+```{r}
+knn_training_pred <-
+  predict(knn_fit, wbcd_train_prep) %>% 
+  bind_cols(predict(knn_fit, wbcd_train_prep, type = "prob")) %>% 
+  # Add the true outcome data back in
+  bind_cols(wbcd_train_prep %>% 
+              select(diagnosis))
+```
+
+```{r}
+knn_training_pred %>%                # training set predictions
+  accuracy(truth = diagnosis, .pred_class)
+
+knn_training_pred %>% # training set predictions
+  roc_auc(truth = diagnosis, .pred_B)
+
+knn_training_pred %>%
+  conf_mat(truth = diagnosis, estimate = .pred_class)
+```
+
+```{r}
+knn_test_pred <-
+  predict(knn_fit, wbcd_test_prep) %>% 
+  bind_cols(predict(knn_fit, wbcd_test_prep, type = "prob")) %>% 
+  # Add the true outcome data back in
+  bind_cols(wbcd_test_prep %>% 
+              select(diagnosis))
+```
+
+
+```{r}
+knn_test_pred %>%                # training set predictions
+  accuracy(truth = diagnosis, .pred_class)
+
+knn_test_pred %>% # training set predictions
+  roc_auc(truth = diagnosis, .pred_B)
+
+knn_test_pred %>%
+  conf_mat(truth = diagnosis, estimate = .pred_class)
+```
+
+
+```{r}
+wbcd_wflow <-
+  workflow() %>%
+  add_recipe(wbcd_rec) %>%
+  add_model(knn_model)
+
+wbcd_wflow
+```
+
+```{r}
+knn_fit <- wbcd_wflow %>%
+  last_fit(wbcd_split)
+```
+
+```{r}
+knn_fit %>%
+  collect_predictions() %>%
+  conf_mat(truth = diagnosis, estimate = .pred_class)
+```
+
+```{r}
+knn_fit %>%
+  collect_metrics()
+```
+
+# Using Cross Validation
+
+```{r}
+folds <- vfold_cv(wbcd_train, v = 10)
+folds
+```
+
+```{r}
+wbcd_fit_rs <- 
+  wbcd_wflow %>% 
+  fit_resamples(folds)
+```
+
+```{r}
+collect_metrics(wbcd_fit_rs)
+```
+
+

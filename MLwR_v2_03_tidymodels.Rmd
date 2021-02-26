@@ -1,0 +1,79 @@
+---
+title: "wisc_bc_data - kNN"
+author: "Eric A. Suess"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+```
+
+```{r}
+wbcd <- read_csv("wisc_bc_data.csv")
+wbcd <- wbcd %>% select(-id) %>% 
+  mutate(diagnosis = as_factor(diagnosis))
+wbcd
+```
+
+```{r}
+wbcd_split <- initial_split(wbcd, prop = 0.8)
+wbcd_split
+
+wbcd_train <- training(wbcd_split)
+head(wbcd_train)
+
+wbcd_test <- testing(wbcd_split)
+head(wbcd_test)
+```
+
+```{r, message = FALSE}
+wbcd %>% select(diagnosis, ends_with("mean")) %>%   
+  ggpairs(aes(color = diagnosis))
+```
+
+```{r}
+wbcd_rec <-
+  recipe(diagnosis ~ ., data = wbcd_train) %>%
+  step_normalize(all_predictors()) 
+summary(wbcd_rec)
+```
+
+```{r}
+knn_model <-
+  nearest_neighbor(
+    mode = "classification"
+  ) %>%
+  set_engine("kknn")
+
+wbcd_wflow <-
+  workflow() %>%
+  add_recipe(wbcd_rec) %>%
+  add_model(knn_model)
+
+knn_fit <- wbcd_wflow %>%
+  # fit the final best model to the training set and evaluate the test set
+  last_fit(wbcd_split)
+
+knn_predictions <- knn_fit %>%
+  collect_predictions()
+
+knn_performance <- knn_fit %>%
+  collect_metrics()
+
+knn_predictions %>%
+  conf_mat(truth = diagnosis, estimate = .pred_class)
+```
+
+```{r}
+knn_predictions <- knn_fit %>%
+  collect_metrics()
+knn_predictions
+```
+
